@@ -21,3 +21,5 @@ We pulled from two sources and joined them on month and year:
 ## Results
 The Bayesian model achieved an R² of 0.31 and RMSE of 1.55, identifying determined acres as the strongest predictor. The ARIMA(20,1,20) model reached a test MAE of 237.99 and RMSE of 289.27, capturing the timing and magnitude of loss spikes reasonably well. The MLP achieved 50.68% test accuracy across 7 damage cause classes with strongest performance on climatically distinct causes like heat (66%), freeze (64%), and cold wet weather (60%).
 
+## Future Steps
+For future research, extending the dataset to include post-2018 records would allow for a more recent analysis of the impact on climate conditions. Furthermore, a SARIMAX model incorporating lagged weather variables as inputs would allow for more climate-dependent volatility to be captured. Finally, expanding the analysis beyond avocados to other California produce crops would test whether these patterns are specific to avocado growing conditions or represent broader patterns in crop insurance data.
