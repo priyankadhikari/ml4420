@@ -1,0 +1,122 @@
+---
+title: "Bayesian Regression"
+author: "Nidhi Bendre, Ruchira Banerjee, Priyanka Adhikari- DS4420"
+date: "2026-04-16"
+output:
+  html_document: default
+---
+
+```{r}
+set.seed(42)
+library(brms)
+library(ggplot2)
+```
+
+
+```{r}
+avo <- read.csv("spoilage_avo.csv")
+head(avo)
+
+# drop state and commodity columns (already filtered for CA and avocados)
+avo$Locations.State.Code <- NULL
+avo$Locations.State.Abbreviation <- NULL
+avo$Commodity.Code <- NULL
+avo$Commodity.Name <- NULL
+
+# take log transform of indemnity amt b/c values represent money amount so they're positive
+avo$Indemnity.Amount <- as.numeric(gsub(",", "", avo$Indemnity.Amount))
+avo$log_indemnity <- ifelse(avo$Indemnity.Amount > 0, log(avo$Indemnity.Amount), NA)
+
+# drop rows where vals are NA
+keep_cols <- c("log_indemnity", "Determined.Acres", "Average.Temperature",
+               "Total.CDD", "Total.HDD", "Total.Precipitation", "Avg.PDSI",
+               "Damage.Cause.Description", "Stage.Code", "Month.of.Loss",
+               "Location.County.Name")
+avo_clean <- avo[complete.cases(avo[, keep_cols]), keep_cols]
+
+# encode categorical variables as factors for random intercepts in brms
+avo_clean$Damage.Cause.Description <- as.factor(avo_clean$Damage.Cause.Description)
+avo_clean$Stage.Code <- as.factor(avo_clean$Stage.Code)
+avo_clean$Month.of.Loss <- as.factor(avo_clean$Month.of.Loss)
+avo_clean$Location.County.Name <- as.factor(avo_clean$Location.County.Name)
+
+# scale numeric vals
+numeric_covs <- c("Determined.Acres", "Average.Temperature", "Total.CDD", "Total.HDD", 
+                  "Total.Precipitation", "Avg.PDSI")
+avo_scaled <- avo_clean
+avo_scaled[, numeric_covs] <- scale(avo_clean[, numeric_covs])
+head(avo_scaled)
+
+# indemnity amount before/after log (dist becomes normal)
+par(mfrow = c(1, 2))
+hist(exp(avo_clean$log_indemnity), breaks = 60, probability = TRUE,
+     col = "blue",
+     main = "Indemnity Amount", xlab = "Indemnity Amount in $")
+
+hist(avo_clean$log_indemnity, breaks = 60, probability = TRUE,
+     col = "green",
+     main = "log(Indemnity Amount)", xlab = "log(Indemnity Amount)")
+par(mfrow = c(1, 1))
+```
+
+```{r}
+
+# brms for bayesian reg
+
+default_prior(log_indemnity ~ Determined.Acres + Average.Temperature +
+                Total.CDD + Total.HDD + Total.Precipitation + Avg.PDSI +
+                (1 | Damage.Cause.Description) + (1 | Stage.Code) +
+                (1 | Month.of.Loss) + (1 | Location.County.Name), data = avo_scaled,
+              family = gaussian())
+
+manual_prior_brms <- c(
+  prior(student_t(3, 0, 10), class = "Intercept"),
+  prior(normal(0, 10), class = "b", coef = "Determined.Acres"),
+  prior(normal(0, 10), class = "b", coef = "Average.Temperature"),
+  prior(normal(0, 10), class = "b", coef = "Total.CDD"),
+  prior(normal(0, 10), class = "b", coef = "Total.HDD"),
+  prior(normal(0, 10), class = "b", coef = "Total.Precipitation"),
+  prior(normal(0, 10), class = "b", coef = "Avg.PDSI"))
+
+avo_brm <- brm(
+  log_indemnity ~ Determined.Acres + Average.Temperature +
+    Total.CDD + Total.HDD + Total.Precipitation + Avg.PDSI +
+    (1 | Damage.Cause.Description) + (1 | Stage.Code) +
+    (1 | Month.of.Loss) + (1 | Location.County.Name), family  = gaussian(),
+  data = avo_scaled,
+  chains = 4,
+  cores = 2,
+  iter = 2000,
+  warmup = 400,
+  thin = 2,
+  prior = manual_prior_brms,
+  control = list(adapt_delta = 0.95))
+
+summary(avo_brm)
+plot(avo_brm)
+bayes_R2(avo_brm)
+```
+
+
+```{r}
+# plot the way that log indemnity changes w/ most significant features
+plot(conditional_effects(avo_brm, "Average.Temperature"))
+plot(conditional_effects(avo_brm, "Determined.Acres"))
+plot(conditional_effects(avo_brm, "Avg.PDSI"))
+plot(conditional_effects(avo_brm, "Total.Precipitation"))
+
+# posterior pred mean & RMSE
+post_preds_brm <- posterior_predict(avo_brm)
+brm_pred_means <- colMeans(post_preds_brm)
+
+y <- avo_scaled$log_indemnity
+brm_rmse <- sqrt(mean((y - brm_pred_means)^2))
+cat("BRMS RMSE:", round(brm_rmse, 4))
+
+plot(brm_pred_means, y, xlab = "BRMS Posterior Predictive Mean log(Indemnity Amount)",
+     ylab = "Observed log(Indemnity Amount)",
+     main = "BRMS: Posterior Predictive vs. Observed",
+     pch = 16, col = "red")
+abline(0, 1, col = "red", lwd = 2)
+
+```
